@@ -1,0 +1,7 @@
+acquisition_channel,customers,active_last_12m,annual_churn_rate_pct,expected_lifespan_years,annual_revenue_per_customer,gross_margin_pct,annual_margin_per_customer,predicted_clv,avg_historical_revenue
+Referral,661.0,530.0,48.34,2.07,326.06,33.86,110.41,228.4,388.56
+Email,880.0,688.0,53.33,1.88,353.51,32.4,114.55,214.78,406.63
+Organic Search,1998.0,1548.0,55.83,1.79,338.92,32.92,111.57,199.83,369.05
+Paid Search,1488.0,1122.0,61.93,1.61,291.83,31.74,92.64,149.58,318.12
+Social Media,1302.0,929.0,69.07,1.45,238.07,33.44,79.6,115.24,255.42
+Affiliate,408.0,308.0,65.36,1.53,203.02,33.98,68.99,105.55,237.56

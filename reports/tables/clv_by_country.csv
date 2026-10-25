@@ -1,0 +1,9 @@
+country,customers,active_last_12m,annual_churn_rate_pct,expected_lifespan_years,annual_revenue_per_customer,gross_margin_pct,annual_margin_per_customer,predicted_clv,avg_historical_revenue
+United States,2545.0,1943.0,58.67,1.7,317.1,32.3,102.43,174.58,342.33
+Australia,475.0,355.0,61.54,1.62,320.12,33.46,107.11,174.05,374.18
+Netherlands,345.0,268.0,57.04,1.75,304.8,32.3,98.46,172.62,354.3
+France,418.0,316.0,60.71,1.65,315.39,32.97,103.99,171.28,336.24
+United Kingdom,925.0,684.0,62.27,1.61,316.16,32.96,104.21,167.35,329.94
+Canada,545.0,418.0,57.47,1.74,275.71,33.21,91.56,159.32,318.44
+Germany,699.0,538.0,58.97,1.7,279.73,33.45,93.58,158.68,331.1
+India,785.0,603.0,57.59,1.74,263.15,33.39,87.86,152.55,296.75

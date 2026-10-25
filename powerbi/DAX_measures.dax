@@ -1,0 +1,309 @@
+// =====================================================================
+// DAX measures for the E-Commerce LTV & Cohort dashboard
+// ---------------------------------------------------------------------
+// Create a "_Measures" table (Home > Enter data > load an empty table)
+// and add each measure below to it (Modeling > New measure).
+// Suggested format strings are given in the comment above each measure.
+//
+// Model (see DASHBOARD_GUIDE.md):
+//   dim_date[Date]             1 -> * fact_orders[order_date]
+//   dim_date[Date]             1 -> * fact_order_lines[order_date]
+//   dim_customers[customer_id] 1 -> * fact_orders[customer_id]
+//   dim_customers[customer_id] 1 -> * fact_order_lines[customer_id]
+//   dim_products[product_id]   1 -> * fact_order_lines[product_id]
+// =====================================================================
+
+
+// ---------------------------------------------------------------------
+// 0. DATE TABLE  (Modeling > New table, then "Mark as date table")
+// ---------------------------------------------------------------------
+dim_date =
+VAR MinDate = DATE ( YEAR ( MIN ( fact_orders[order_date] ) ), 1, 1 )
+VAR MaxDate = DATE ( YEAR ( MAX ( fact_orders[order_date] ) ), 12, 31 )
+RETURN
+    ADDCOLUMNS (
+        CALENDAR ( MinDate, MaxDate ),
+        "Year", YEAR ( [Date] ),
+        "Quarter", "Q" & QUARTER ( [Date] ),
+        "Month Number", MONTH ( [Date] ),
+        "Month", FORMAT ( [Date], "mmm" ),
+        "Year-Month", FORMAT ( [Date], "yyyy-mm" ),
+        "Month Start", DATE ( YEAR ( [Date] ), MONTH ( [Date] ), 1 )
+    )
+
+
+// ---------------------------------------------------------------------
+// 1. CORE KPIs
+// ---------------------------------------------------------------------
+// Format: Currency, 0 decimals
+Total Revenue = SUM ( fact_orders[revenue] )
+
+// Format: Currency, 0 decimals
+Gross Profit = SUM ( fact_orders[gross_profit] )
+
+// Format: Percentage, 1 decimal
+Gross Margin % = DIVIDE ( [Gross Profit], [Total Revenue] )
+
+// Format: Whole number
+Total Orders = COUNTROWS ( fact_orders )
+
+// Format: Whole number
+Active Customers = DISTINCTCOUNT ( fact_orders[customer_id] )
+
+// Format: Currency, 2 decimals
+Average Order Value = DIVIDE ( [Total Revenue], [Total Orders] )
+
+// Format: Decimal, 2 decimals
+Orders per Customer = DIVIDE ( [Total Orders], [Active Customers] )
+
+// Format: Currency, 2 decimals
+Revenue per Customer = DIVIDE ( [Total Revenue], [Active Customers] )
+
+// Format: Whole number
+Units Sold = SUM ( fact_orders[units] )
+
+
+// ---------------------------------------------------------------------
+// 2. MONTH-OVER-MONTH & TIME INTELLIGENCE
+// ---------------------------------------------------------------------
+// Format: Currency, 0 decimals
+Revenue PM = CALCULATE ( [Total Revenue], DATEADD ( dim_date[Date], -1, MONTH ) )
+
+// Format: Percentage, 1 decimal
+Revenue MoM % =
+VAR PrevRevenue = [Revenue PM]
+RETURN
+    IF ( NOT ISBLANK ( PrevRevenue ), DIVIDE ( [Total Revenue] - PrevRevenue, PrevRevenue ) )
+
+// Format: Whole number
+Active Customers PM = CALCULATE ( [Active Customers], DATEADD ( dim_date[Date], -1, MONTH ) )
+
+// Format: Percentage, 1 decimal
+Active Customers MoM % =
+VAR PrevCustomers = [Active Customers PM]
+RETURN
+    IF ( NOT ISBLANK ( PrevCustomers ), DIVIDE ( [Active Customers] - PrevCustomers, PrevCustomers ) )
+
+// Format: Percentage, 1 decimal
+Orders MoM % =
+VAR PrevOrders = CALCULATE ( [Total Orders], DATEADD ( dim_date[Date], -1, MONTH ) )
+RETURN
+    IF ( NOT ISBLANK ( PrevOrders ), DIVIDE ( [Total Orders] - PrevOrders, PrevOrders ) )
+
+// Format: Percentage, 1 decimal
+AOV MoM % =
+VAR PrevAOV = CALCULATE ( [Average Order Value], DATEADD ( dim_date[Date], -1, MONTH ) )
+RETURN
+    IF ( NOT ISBLANK ( PrevAOV ), DIVIDE ( [Average Order Value] - PrevAOV, PrevAOV ) )
+
+// Format: Currency, 0 decimals
+Revenue PY = CALCULATE ( [Total Revenue], SAMEPERIODLASTYEAR ( dim_date[Date] ) )
+
+// Format: Percentage, 1 decimal
+Revenue YoY % =
+VAR PrevYear = [Revenue PY]
+RETURN
+    IF ( NOT ISBLANK ( PrevYear ), DIVIDE ( [Total Revenue] - PrevYear, PrevYear ) )
+
+// Format: Currency, 0 decimals
+Revenue YTD = TOTALYTD ( [Total Revenue], dim_date[Date] )
+
+// Format: Currency, 0 decimals
+Revenue 3M Rolling Avg =
+VAR LastVisibleDate = MAX ( dim_date[Date] )
+RETURN
+    CALCULATE (
+        AVERAGEX ( VALUES ( dim_date[Year-Month] ), [Total Revenue] ),
+        DATESINPERIOD ( dim_date[Date], LastVisibleDate, -3, MONTH )
+    )
+
+// Conditional-formatting helper for MoM visuals (Format > Field value)
+MoM Color = IF ( [Revenue MoM %] >= 0, "#2E7D32", "#C62828" )
+
+
+// ---------------------------------------------------------------------
+// 3. CUSTOMER ACQUISITION & RETENTION
+// ---------------------------------------------------------------------
+// New customer = first ever order falls in the period
+// Format: Whole number
+New Customers =
+CALCULATE ( [Active Customers], fact_orders[months_since_first_order] = 0 )
+
+// Format: Whole number
+Returning Customers = [Active Customers] - [New Customers]
+
+// Format: Percentage, 1 decimal
+Repeat Customer Rate =
+VAR RepeatBuyers =
+    COUNTROWS (
+        FILTER ( VALUES ( fact_orders[customer_id] ), CALCULATE ( COUNTROWS ( fact_orders ) ) > 1 )
+    )
+RETURN
+    DIVIDE ( RepeatBuyers, [Active Customers] )
+
+
+// ---------------------------------------------------------------------
+// 4. COHORT ANALYSIS
+// Matrix: Rows = dim_customers[cohort_month]
+//         Columns = fact_orders[months_since_first_order]
+// ---------------------------------------------------------------------
+// Format: Whole number
+Cohort Size =
+CALCULATE ( [Active Customers], fact_orders[months_since_first_order] = 0 )
+
+// Format: Percentage, 1 decimal  (apply a colour-scale background)
+Cohort Retention % = DIVIDE ( [Active Customers], [Cohort Size] )
+
+// Format: Currency, 0 decimals
+Cohort Cumulative Revenue per Customer =
+VAR CurrentMonth = MAX ( fact_orders[months_since_first_order] )
+RETURN
+    DIVIDE (
+        CALCULATE ( [Total Revenue], fact_orders[months_since_first_order] <= CurrentMonth ),
+        [Cohort Size]
+    )
+
+
+// ---------------------------------------------------------------------
+// 5. RFM SEGMENTATION & REVENUE CONCENTRATION
+// ---------------------------------------------------------------------
+// Format: Percentage, 1 decimal
+Revenue Share % =
+DIVIDE ( [Total Revenue], CALCULATE ( [Total Revenue], REMOVEFILTERS ( dim_customers[segment] ) ) )
+
+// Format: Percentage, 1 decimal
+Customer Share % =
+DIVIDE ( [Active Customers], CALCULATE ( [Active Customers], REMOVEFILTERS ( dim_customers[segment] ) ) )
+
+// Format: Percentage, 1 decimal
+Champions Revenue Share % =
+DIVIDE (
+    CALCULATE ( [Total Revenue], dim_customers[segment] = "Champions" ),
+    CALCULATE ( [Total Revenue], REMOVEFILTERS ( dim_customers[segment] ) )
+)
+
+// Share of revenue from the top 20% of customers by spend (Pareto)
+// Format: Percentage, 1 decimal
+Top 20% Customers Revenue Share % =
+VAR CustomerRevenue =
+    ADDCOLUMNS ( VALUES ( fact_orders[customer_id] ), "@Revenue", [Total Revenue] )
+VAR TopCount = ROUNDUP ( COUNTROWS ( CustomerRevenue ) * 0.2, 0 )
+VAR TopCustomers = TOPN ( TopCount, CustomerRevenue, [@Revenue], DESC )
+RETURN
+    DIVIDE ( SUMX ( TopCustomers, [@Revenue] ), SUMX ( CustomerRevenue, [@Revenue] ) )
+
+// Format: Currency, 2 decimals
+Avg Historical Revenue per Customer = AVERAGE ( dim_customers[historical_revenue] )
+
+
+// ---------------------------------------------------------------------
+// 6. CUSTOMER LIFETIME VALUE PREDICTION
+// Same method as src/ltv_analysis.py, so the values reconcile with
+// reports/tables/clv_overall.csv and clv_by_channel.csv.
+//
+//   Annual churn    = 1 - retained / customers active in prior 12 months
+//   Lifespan (yrs)  = MIN ( 1 / churn, 5 )
+//   Predicted CLV   = annual gross margin per active customer x lifespan
+//
+// The 12-month windows are fixed to the latest order date, so these
+// measures ignore date slicers but respond to channel / country slicers.
+// Use them by channel, country or cohort - not by RFM segment (segments
+// are defined by recency, which makes churn circular).
+// ---------------------------------------------------------------------
+// Hidden helper: last order date in the whole dataset
+CLV Last Date = CALCULATE ( MAX ( fact_orders[order_date] ), REMOVEFILTERS () )
+
+// Format: Whole number
+Customers L12M =
+VAR LastDate = [CLV Last Date]
+RETURN
+    CALCULATE (
+        [Active Customers],
+        REMOVEFILTERS ( dim_date ),
+        DATESINPERIOD ( dim_date[Date], LastDate, -12, MONTH )
+    )
+
+// Format: Whole number
+Customers Prior 12M =
+VAR LastDate = [CLV Last Date]
+RETURN
+    CALCULATE (
+        [Active Customers],
+        REMOVEFILTERS ( dim_date ),
+        DATESINPERIOD ( dim_date[Date], EDATE ( LastDate, -12 ), -12, MONTH )
+    )
+
+// Customers who bought in the prior 12 months AND again in the last 12 months
+// Format: Whole number
+Retained Customers =
+VAR LastDate = [CLV Last Date]
+VAR PriorCustomers =
+    CALCULATETABLE (
+        VALUES ( fact_orders[customer_id] ),
+        REMOVEFILTERS ( dim_date ),
+        DATESINPERIOD ( dim_date[Date], EDATE ( LastDate, -12 ), -12, MONTH )
+    )
+VAR CurrentCustomers =
+    CALCULATETABLE (
+        VALUES ( fact_orders[customer_id] ),
+        REMOVEFILTERS ( dim_date ),
+        DATESINPERIOD ( dim_date[Date], LastDate, -12, MONTH )
+    )
+RETURN
+    COUNTROWS ( INTERSECT ( PriorCustomers, CurrentCustomers ) )
+
+// Format: Percentage, 1 decimal
+Annual Churn Rate =
+VAR Prior = [Customers Prior 12M]
+RETURN
+    IF ( NOT ISBLANK ( Prior ), 1 - DIVIDE ( [Retained Customers], Prior ) )
+
+// Format: Decimal, 2 decimals
+Expected Lifespan (Years) =
+VAR Churn = [Annual Churn Rate]
+VAR MaxLifespan = 5
+RETURN
+    SWITCH (
+        TRUE (),
+        ISBLANK ( Churn ), BLANK (),
+        Churn <= 0, MaxLifespan,
+        MIN ( DIVIDE ( 1, Churn ), MaxLifespan )
+    )
+
+// Format: Currency, 0 decimals
+Revenue L12M =
+VAR LastDate = [CLV Last Date]
+RETURN
+    CALCULATE (
+        [Total Revenue],
+        REMOVEFILTERS ( dim_date ),
+        DATESINPERIOD ( dim_date[Date], LastDate, -12, MONTH )
+    )
+
+// Format: Currency, 0 decimals
+Gross Profit L12M =
+VAR LastDate = [CLV Last Date]
+RETURN
+    CALCULATE (
+        [Gross Profit],
+        REMOVEFILTERS ( dim_date ),
+        DATESINPERIOD ( dim_date[Date], LastDate, -12, MONTH )
+    )
+
+// Format: Currency, 2 decimals
+Annual Revenue per Customer = DIVIDE ( [Revenue L12M], [Customers L12M] )
+
+// Format: Currency, 2 decimals
+Annual Margin per Customer = DIVIDE ( [Gross Profit L12M], [Customers L12M] )
+
+// Headline CLV (gross-margin basis)
+// Format: Currency, 2 decimals
+Predicted CLV = [Annual Margin per Customer] * [Expected Lifespan (Years)]
+
+// CLV on a revenue basis (before cost of goods)
+// Format: Currency, 2 decimals
+Predicted CLV (Revenue) = [Annual Revenue per Customer] * [Expected Lifespan (Years)]
+
+// Total future margin expected from today's active customer base
+// Format: Currency, 0 decimals
+Customer Base Value = [Predicted CLV] * [Customers L12M]
